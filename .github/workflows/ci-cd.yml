@@ -1,0 +1,113 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ master ]
+
+env:
+  DOCKER_COMPOSE_VERSION: 1.29.2
+  PROJECT_NAME: "mmmmmmm"
+  FRONTEND_PORT: 3004
+  BACKEND_PORT: 8004
+  DOMAIN: craftapp
+  PROJECT_DIR: "/home/ubuntu/app/mmmmmmm"
+  POSTGRES_DATA_DIR: "/opt/mmmmmmm/postgres-data"
+  CPU_LIMIT: "1000 100000"
+  MEMORY_LIMIT: "2000"
+  SWAP_LIMIT: "2684354560"
+  CPU_SET: "0-1"
+  OOM_SCORE_ADJ: "-500"
+  STORAGE_LIMIT_GB: "2"
+  CENTRAL_NGINX_DIR: "/home/ubuntu/app/central-nginx"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+
+      - name: Copy files via SSH
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "./"
+          target:  "${{ env.PROJECT_DIR }}"
+
+      - name: Update central-nginx networks
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd "${{ env.PROJECT_DIR }}"
+            sudo chmod +x devops/update_compose.sh
+            devops/update_compose.sh "${{ env.PROJECT_NAME }}"
+
+      - name: Run nginx.sh on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd "${{ env.PROJECT_DIR }}"
+            chmod +x devops/nginx-setup.sh
+            devops/nginx-setup.sh "${{ env.PROJECT_NAME }}" "keraamzabih@gmail.com" "44.203.250.84" "craftapp" "ai"
+      - name: Deploy application
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            sudo mkdir -p "${{ env.POSTGRES_DATA_DIR }}"
+            sudo chown -R 1000:1000 "${{ env.POSTGRES_DATA_DIR }}"
+            sudo chmod -R 755 "/opt/${{ env.PROJECT_NAME }}"
+            DEVICE_ID=$(lsblk -d -o MAJ:MIN | awk 'NR==2{print $1}')
+            cd "${{ env.PROJECT_DIR }}"
+            sudo chmod +x devops/init-db.sh
+            sudo chmod +x devops/cgroup-setup.sh
+            sudo chmod 644 frontend/.env
+            sudo chmod 644 backend/.env
+            sudo chmod 644 .env
+            ./devops/cgroup-setup.sh "${{ env.PROJECT_NAME }}" "${{ env.CPU_LIMIT }}" "${{ env.MEMORY_LIMIT }}" "${{ env.STORAGE_LIMIT_GB }}" "$DEVICE_ID"
+            docker-compose down || true
+            docker system prune -f
+            docker-compose up -d --build
+            sleep 10
+            if docker exec central-nginx nginx -t; then
+              docker exec central-nginx nginx -s reload
+              echo "✅ NGINX reloaded successfully"
+            else
+              echo "❌ NGINX configuration test failed"
+              exit 1
+            fi
+            services=("frontend-1" "backend-1" "postgres-1")
+
+            for service in "${services[@]}"; do
+              container="${{ env.PROJECT_NAME }}-${service}"
+              if docker ps | grep -q "$container"; then
+                pid=$(docker inspect -f '{{.State.Pid}}' "$container")
+                echo "Assigning $container (PID: $pid) to cgroup"
+                echo "$pid" | sudo tee "/sys/fs/cgroup/${{ env.PROJECT_NAME }}/cgroup.procs"
+              else
+                echo "Container $container not found!"
+                exit 1
+              fi
+            done
+            
+            echo "Current cgroup processes:"
+            cat /sys/fs/cgroup/${{ env.PROJECT_NAME }}/cgroup.procs
+            echo "Container stats:"
+            docker stats --no-stream
