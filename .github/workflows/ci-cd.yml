@@ -2,7 +2,15 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master" ]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/test-frontend.yml"
+
+  workflow_run:
+    workflows: ["Deploy Infrastructure"]
+    types:
+      - completed
 
 env:
   DOCKER_COMPOSE_VERSION: 1.29.2
