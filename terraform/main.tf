@@ -4,8 +4,6 @@ terraform {
     bucket         = "craftapp-state-bucket"  # Your existing state bucket name
     key            = "backend-bucket/terraform.tfstate"
     region         = "eu-north-1"     # Change to your region
-    encrypt        = true
-    dynamodb_table = "terraform-lock"
   }
 
   required_providers {
@@ -88,22 +86,6 @@ resource "aws_iam_policy" "backend_s3_access" {
       }
     ]
   })
-}
-
-# Create DynamoDB table for state locking (if it doesn't exist)
-resource "aws_dynamodb_table" "terraform_lock" {
-  name           = "terraform-lock"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  tags = {
-    Name = "Terraform Lock Table"
-  }
 }
 
 # Output the bucket name and ARN for reference
