@@ -1,9 +1,9 @@
 # Configure the S3 backend for state storage (must be at the beginning)
 terraform {
   backend "s3" {
-    bucket         = "terraform-state-bucket"  # Your existing state bucket name
+    bucket         = "craftapp-state-bucket"  # Your existing state bucket name
     key            = "backend-bucket/terraform.tfstate"
-    region         = "us-east-1"     # Change to your region
+    region         = "eu-north-1"     # Change to your region
     encrypt        = true
     dynamodb_table = "terraform-lock"
   }
