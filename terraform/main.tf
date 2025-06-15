@@ -1,11 +1,9 @@
-# Configure the S3 backend for state storage (must be at the beginning)
+
 terraform {
   backend "s3" {
-    bucket         = "terraform-state-bucket"  # Your existing state bucket name
-    key            = "backend-bucket/terraform.tfstate"
-    region         = "us-east-1"     # Change to your region
-    encrypt        = true
-    dynamodb_table = "terraform-lock"
+    bucket         = "craftapp-state-bucket"
+    key            = "${var.project}/terraform.tfstate"
+    region         = "${var.region}"
   }
 
   required_providers {
@@ -26,20 +24,20 @@ resource "random_id" "bucket_suffix" {
 }
 
 # Create S3 Bucket for Backend Storage
-resource "aws_s3_bucket" "backend_bucket" {
-  bucket = "${var.project}-${var.region}-backend-${random_id.bucket_suffix.hex}"
+resource "aws_s3_bucket" "s3_bucket" {
+  bucket = "${var.project}-${var.region}-bucket-${random_id.bucket_suffix.hex}"
   force_destroy = true
   
   tags = {
-    Name        = "${var.project}-backend-bucket-${random_id.bucket_suffix.hex}"
+    Name        = "${var.project}-bucket-${random_id.bucket_suffix.hex}"
     Project     = var.project
     Environment = var.environment
   }
 }
 
 # Enable versioning for backup/recovery
-resource "aws_s3_bucket_versioning" "backend_versioning" {
-  bucket = aws_s3_bucket.backend_bucket.id
+resource "aws_s3_bucket_versioning" "bucket_versioning" {
+  bucket = aws_s3_bucket.s3_bucket.id
   versioning_configuration {
     status = "Enabled"
   }
@@ -47,7 +45,7 @@ resource "aws_s3_bucket_versioning" "backend_versioning" {
 
 # Block all public access (recommended for backend storage)
 resource "aws_s3_bucket_public_access_block" "block_public" {
-  bucket = aws_s3_bucket.backend_bucket.id
+  bucket = aws_s3_bucket.s3_bucket.id
   
   block_public_acls       = true
   block_public_policy     = true
@@ -56,8 +54,8 @@ resource "aws_s3_bucket_public_access_block" "block_public" {
 }
 
 # Set bucket ownership controls
-resource "aws_s3_bucket_ownership_controls" "backend_ownership" {
-  bucket = aws_s3_bucket.backend_bucket.id
+resource "aws_s3_bucket_ownership_controls" "bucket_ownership" {
+  bucket = aws_s3_bucket.s3_bucket.id
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
@@ -81,37 +79,21 @@ resource "aws_iam_policy" "backend_s3_access" {
           "s3:GetBucketLocation"
         ],
         Resource = [
-          aws_s3_bucket.backend_bucket.arn,
-          "${aws_s3_bucket.backend_bucket.arn}/*"
+          aws_s3_bucket.s3_bucket.arn,
+          "${aws_s3_bucket.s3_bucket.arn}/*"
         ]
       }
     ]
   })
 }
 
-# Create DynamoDB table for state locking (if it doesn't exist)
-resource "aws_dynamodb_table" "terraform_lock" {
-  name           = "terraform-lock"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  tags = {
-    Name = "Terraform Lock Table"
-  }
-}
-
 # Output the bucket name and ARN for reference
 output "s3_bucket_name" {
-  value = aws_s3_bucket.backend_bucket.bucket
+  value = aws_s3_bucket.s3_bucket.bucket
 }
 
 output "s3_bucket_arn" {
-  value = aws_s3_bucket.backend_bucket.arn
+  value = aws_s3_bucket.s3_bucket.arn
 }
 
 output "iam_policy_arn" {
