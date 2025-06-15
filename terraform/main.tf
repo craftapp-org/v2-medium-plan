@@ -3,8 +3,8 @@
 terraform {
   backend "s3" {
     bucket         = "craftapp-state-bucket"
-    key            = "${var.project}/terraform.tfstate"
-    region         = "${var.region}"
+    key            = "v2-test/terraform.tfstate"
+    region         = "eu-north-1"
   }
 
   required_providers {
