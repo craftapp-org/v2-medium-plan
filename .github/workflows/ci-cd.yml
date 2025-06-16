@@ -87,8 +87,8 @@ jobs:
             ./devops/cgroup-setup.sh "${{ env.PROJECT_NAME }}" "${{ env.CPU_LIMIT }}" "${{ env.MEMORY_LIMIT }}" "${{ env.STORAGE_LIMIT_GB }}" "$DEVICE_ID"
             docker-compose down || true
             docker system prune -f
-            docker-compose up -d --build
-            sleep 10
+            docker-compose up -d --build --no-cache
+            sleep 120
             if docker exec central-nginx nginx -t; then
               docker exec central-nginx nginx -s reload
               echo "✅ NGINX reloaded successfully"
