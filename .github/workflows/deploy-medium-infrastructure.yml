@@ -51,7 +51,6 @@ jobs:
           cd ./terraform
           # Get raw outputs without quotes
           S3_BUCKET=$(terraform output s3_bucket_name | grep -oE '".*"' | tr -d '"' | head -1)
-
           echo "Stored S3 Bucket: $S3_BUCKET"
           aws ssm put-parameter --name "/app/s3-bucket" --value "$S3_BUCKET" --type String --overwrite
           echo "Stored S3 Bucket: $S3_BUCKET"
