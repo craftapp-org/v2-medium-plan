@@ -8,12 +8,12 @@ on:
 
 env:
   DOCKER_COMPOSE_VERSION: 1.29.2
-  PROJECT_NAME: "v2-test"
+  PROJECT_NAME: "v2-final"
   FRONTEND_PORT: 3004
   BACKEND_PORT: 8004
   DOMAIN: craftapp
-  PROJECT_DIR: "/home/ubuntu/app/v2-test"
-  POSTGRES_DATA_DIR: "/opt/v2-test/postgres-data"
+  PROJECT_DIR: "/home/ubuntu/app/v2-final"
+  POSTGRES_DATA_DIR: "/opt/v2-final/postgres-data"
   CPU_LIMIT: "1000 100000"
   MEMORY_LIMIT: "2000"
   SWAP_LIMIT: "2684354560"
