@@ -65,6 +65,7 @@ jobs:
             cd "${{ env.PROJECT_DIR }}"
             chmod +x devops/nginx-setup.sh
             devops/nginx-setup.sh "${{ env.PROJECT_NAME }}" "keraamzabih@gmail.com" "44.203.250.84" "craftapp" "ai"
+
       - name: Deploy application
         uses: appleboy/ssh-action@master
         with:
