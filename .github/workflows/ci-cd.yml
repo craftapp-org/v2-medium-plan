@@ -84,6 +84,8 @@ jobs:
             cd "${{ env.PROJECT_DIR }}"
             sudo chmod +x devops/init-db.sh
             sudo chmod +x devops/cgroup-setup.sh
+            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> backend/.env
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> backend/.env
             sudo chmod 644 frontend/.env
             sudo chmod 644 backend/.env
             sudo chmod 644 .env
