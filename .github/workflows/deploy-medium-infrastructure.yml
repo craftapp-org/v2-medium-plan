@@ -5,8 +5,7 @@ on:
     paths:
     - 'terraform/**'
     - '.github/workflows/deploy-medium-infrastructure.yml'
-
-  
+ 
 jobs:
   terraform:
     runs-on: ubuntu-latest
