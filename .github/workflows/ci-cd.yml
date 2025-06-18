@@ -9,6 +9,7 @@ on:
 env:
   DOCKER_COMPOSE_VERSION: 1.29.2
   PROJECT_NAME: "v2-final"
+  AWS_DEFAULT_REGION: "us-east-1"
   FRONTEND_PORT: 3004
   BACKEND_PORT: 8004
   DOMAIN: craftapp
@@ -85,8 +86,12 @@ jobs:
             cd "${{ env.PROJECT_DIR }}"
             sudo chmod +x devops/init-db.sh
             sudo chmod +x devops/cgroup-setup.sh
+            S3_BUCKET=$(aws ssm get-parameter --name "/app/s3-bucket" --query "Parameter.Value" --output text)
+            echo "Retrieved S3 Bucket: $S3_BUCKET"
+            echo "S3_BUCKET_NAME=${S3_BUCKET}" >> backend/.env
             echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> backend/.env
             echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> backend/.env
+            echo "AWS_REGION=${AWS_DEFAULT_REGION}" >> backend/.env
             sudo chmod 644 frontend/.env
             sudo chmod 644 backend/.env
             sudo chmod 644 .env
