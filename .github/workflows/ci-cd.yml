@@ -94,7 +94,7 @@ jobs:
           host: ${{ secrets.EC2_INSTANCE_IP }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,S3_BUCKET_NAME,AWS_DEFAULT_REGION
+          envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,S3_BUCKET_NAME,AWS_DEFAULT_REGION
           script: |
             set -e
             sudo mkdir -p "${{ env.POSTGRES_DATA_DIR }}"
@@ -105,20 +105,20 @@ jobs:
             sudo chmod +x devops/init-db.sh
             sudo chmod +x devops/cgroup-setup.sh
             echo "S3_BUCKET_NAME=${S3_BUCKET_NAME}" >> backend/.env
-            echo "AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}" >> backend/.env
-            echo "AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}" >> backend/.env
+            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> backend/.env
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> backend/.env
             echo "AWS_REGION=${AWS_DEFAULT_REGION}" >> backend/.env
             sudo chmod 644 frontend/.env
             sudo chmod 644 backend/.env
             sudo chmod 644 .env
-            export AWS_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID}"
-            export AWS_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY}"
+            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
             ./devops/cgroup-setup.sh "${{ env.PROJECT_NAME }}" "${{ env.CPU_LIMIT }}" "${{ env.MEMORY_LIMIT }}" "${{ env.STORAGE_LIMIT_GB }}" "$DEVICE_ID"
             docker-compose down || true
             docker system prune -f
             docker-compose build --no-cache
             docker-compose up -d
-            sleep 120
+            sleep 10
             if docker exec central-nginx nginx -t; then
               docker exec central-nginx nginx -s reload
               echo "✅ NGINX reloaded successfully"
