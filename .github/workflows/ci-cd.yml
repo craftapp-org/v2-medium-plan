@@ -66,17 +66,27 @@ jobs:
             cd "${{ env.PROJECT_DIR }}"
             chmod +x devops/nginx-setup.sh
             devops/nginx-setup.sh "${{ env.PROJECT_NAME }}" "keraamzabih@gmail.com" "44.203.250.84" "craftapp" "ai"
-
+            
+      - name: Get S3 Bucket from SSM
+        id: get-s3-bucket
+        run: |
+          S3_BUCKET=$(aws ssm get-parameter --name "/app/s3-bucket" --query "Parameter.Value" --output text)
+          echo "Retrieved S3 Bucket: $S3_BUCKET"
+          # Store the value in GitHub Actions output
+          echo "S3_BUCKET_NAME=$S3_BUCKET" >> $GITHUB_ENV
+          echo "::set-output name=bucket::$S3_BUCKET"
+          
       - name: Deploy application
         uses: appleboy/ssh-action@master
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET_NAME: ${{ env.S3_BUCKET_NAME }}
         with:
           host: ${{ secrets.EC2_INSTANCE_IP }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,S3_BUCKET_NAME
           script: |
             set -e
             sudo mkdir -p "${{ env.POSTGRES_DATA_DIR }}"
@@ -86,12 +96,10 @@ jobs:
             cd "${{ env.PROJECT_DIR }}"
             sudo chmod +x devops/init-db.sh
             sudo chmod +x devops/cgroup-setup.sh
-            S3_BUCKET=$(aws ssm get-parameter --name "/app/s3-bucket" --query "Parameter.Value" --output text)
-            echo "Retrieved S3 Bucket: $S3_BUCKET"
-            echo "S3_BUCKET_NAME=${S3_BUCKET}" >> backend/.env
-            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> backend/.env
-            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> backend/.env
-            echo "AWS_REGION=${AWS_DEFAULT_REGION}" >> backend/.env
+            echo "S3_BUCKET_NAME=${S3_BUCKET_NAME}" >> backend/.env
+            echo "AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}" >> backend/.env
+            echo "AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}" >> backend/.env
+            echo "AWS_REGION=${env.AWS_DEFAULT_REGION}" >> backend/.env
             sudo chmod 644 frontend/.env
             sudo chmod 644 backend/.env
             sudo chmod 644 .env
