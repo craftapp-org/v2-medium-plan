@@ -66,7 +66,14 @@ jobs:
             cd "${{ env.PROJECT_DIR }}"
             chmod +x devops/nginx-setup.sh
             devops/nginx-setup.sh "${{ env.PROJECT_NAME }}" "keraamzabih@gmail.com" "44.203.250.84" "craftapp" "ai"
-            
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
       - name: Get S3 Bucket from SSM
         id: get-s3-bucket
         run: |
@@ -74,7 +81,7 @@ jobs:
           echo "Retrieved S3 Bucket: $S3_BUCKET"
           # Store the value in GitHub Actions output
           echo "S3_BUCKET_NAME=$S3_BUCKET" >> $GITHUB_ENV
-          echo "::set-output name=bucket::$S3_BUCKET"
+          echo "bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
           
       - name: Deploy application
         uses: appleboy/ssh-action@master
