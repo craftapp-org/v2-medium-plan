@@ -11,10 +11,7 @@ on:
     - 'frontend/**'
 
 env:
-  # Common environment variables
   AWS_DEFAULT_REGION: "us-east-1"
-  
-  # EC2 deployment variables
   DOCKER_COMPOSE_VERSION: 1.29.2
   PROJECT_NAME: "v2-final"
   FRONTEND_PORT: 3004
@@ -39,23 +36,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
       - name: Terraform Init
         run: terraform -chdir=terraform init -input=false
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Terraform Plan
         run: |
           terraform -chdir=terraform plan \
             -input=false \
             -out=tfplan
-        env:
-          TF_VAR_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          TF_VAR_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Terraform Apply
         run: |
@@ -63,23 +61,16 @@ jobs:
             -input=false \
             tfplan
         env:
-          TF_VAR_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          TF_VAR_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           TF_VAR_website_files_path: ${{ github.workspace }}/website
           
       - name: Store Outputs in SSM and Set Output
         id: store-outputs
         run: |
           cd ./terraform
-          # Get raw outputs without quotes
           S3_BUCKET=$(terraform output s3_bucket_name | grep -oE '".*"' | tr -d '"' | head -1)
-          
           aws ssm put-parameter --name "/app/s3-bucket" --value "$S3_BUCKET" --type String --overwrite
           echo "Stored S3 Bucket: $S3_BUCKET"
           echo "s3_bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
   deploy:
     needs: terraform
