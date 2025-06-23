@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
     paths:
     - 'terraform/**'
-    - '.github/workflows/deploy-medium-infrastructure.yml'
+    - '.github/workflows/deploy-infrastructure-and-application.yml'
     - 'devops/**'
     - 'backend/**'
     - 'frontend/**'
