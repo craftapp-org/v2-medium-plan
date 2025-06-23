@@ -1,0 +1,195 @@
+name: Combined Deploy Infrastructure and Application
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+    - 'terraform/**'
+    - '.github/workflows/deploy-medium-infrastructure.yml'
+    - 'devops/**'
+    - 'backend/**'
+    - 'frontend/**'
+
+env:
+  # Common environment variables
+  AWS_DEFAULT_REGION: "us-east-1"
+  
+  # EC2 deployment variables
+  DOCKER_COMPOSE_VERSION: 1.29.2
+  PROJECT_NAME: "v2-final"
+  FRONTEND_PORT: 3004
+  BACKEND_PORT: 8004
+  DOMAIN: craftapp
+  PROJECT_DIR: "/home/ubuntu/app/v2-final"
+  POSTGRES_DATA_DIR: "/opt/v2-final/postgres-data"
+  CPU_LIMIT: "1000 100000"
+  MEMORY_LIMIT: "2000"
+  SWAP_LIMIT: "2684354560"
+  CPU_SET: "0-1"
+  OOM_SCORE_ADJ: "-500"
+  STORAGE_LIMIT_GB: "2"
+  CENTRAL_NGINX_DIR: "/home/ubuntu/app/central-nginx"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    outputs:
+      s3_bucket: ${{ steps.store-outputs.outputs.s3_bucket }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init -input=false
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Plan
+        run: |
+          terraform -chdir=terraform plan \
+            -input=false \
+            -out=tfplan
+        env:
+          TF_VAR_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          TF_VAR_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Apply
+        run: |
+          terraform -chdir=terraform apply \
+            -input=false \
+            tfplan
+        env:
+          TF_VAR_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          TF_VAR_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_website_files_path: ${{ github.workspace }}/website
+          
+      - name: Store Outputs in SSM and Set Output
+        id: store-outputs
+        run: |
+          cd ./terraform
+          # Get raw outputs without quotes
+          S3_BUCKET=$(terraform output s3_bucket_name | grep -oE '".*"' | tr -d '"' | head -1)
+          
+          aws ssm put-parameter --name "/app/s3-bucket" --value "$S3_BUCKET" --type String --overwrite
+          echo "Stored S3 Bucket: $S3_BUCKET"
+          echo "s3_bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  deploy:
+    needs: terraform
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+
+      - name: Copy files via SSH
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "./"
+          target:  "${{ env.PROJECT_DIR }}"
+
+      - name: Update central-nginx networks
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd "${{ env.PROJECT_DIR }}"
+            sudo chmod +x devops/update_compose.sh
+            devops/update_compose.sh "${{ env.PROJECT_NAME }}"
+
+      - name: Run nginx.sh on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd "${{ env.PROJECT_DIR }}"
+            chmod +x devops/nginx-setup.sh
+            devops/nginx-setup.sh "${{ env.PROJECT_NAME }}" "keraamzabih@gmail.com" "44.203.250.84" "craftapp" "ai"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Get S3 Bucket from Previous Job
+        id: get-s3-bucket
+        run: |
+          echo "S3_BUCKET_NAME=${{ needs.terraform.outputs.s3_bucket }}" >> $GITHUB_ENV
+          echo "bucket=${{ needs.terraform.outputs.s3_bucket }}" >> $GITHUB_OUTPUT
+          
+      - name: Deploy application
+        uses: appleboy/ssh-action@master
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET_NAME: ${{ needs.terraform.outputs.s3_bucket }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_DEFAULT_REGION }} 
+        with:
+          host: ${{ secrets.EC2_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,S3_BUCKET_NAME,AWS_DEFAULT_REGION
+          script: |
+            set -e
+            sudo mkdir -p "${{ env.POSTGRES_DATA_DIR }}"
+            sudo chown -R 1000:1000 "${{ env.POSTGRES_DATA_DIR }}"
+            sudo chmod -R 755 "/opt/${{ env.PROJECT_NAME }}"
+            DEVICE_ID=$(lsblk -d -o MAJ:MIN | awk 'NR==2{print $1}')
+            cd "${{ env.PROJECT_DIR }}"
+            sudo chmod +x devops/init-db.sh
+            sudo chmod +x devops/cgroup-setup.sh
+            echo "S3_BUCKET_NAME=${S3_BUCKET_NAME}" >> backend/.env
+            echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> backend/.env
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> backend/.env
+            echo "AWS_REGION=${AWS_DEFAULT_REGION}" >> backend/.env
+            sudo chmod 644 frontend/.env
+            sudo chmod 644 backend/.env
+            sudo chmod 644 .env
+            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+            ./devops/cgroup-setup.sh "${{ env.PROJECT_NAME }}" "${{ env.CPU_LIMIT }}" "${{ env.MEMORY_LIMIT }}" "${{ env.STORAGE_LIMIT_GB }}" "$DEVICE_ID"
+            docker-compose down || true
+            docker system prune -f
+            docker-compose build --no-cache
+            docker-compose up -d
+            sleep 10
+            services=("frontend-1" "backend-1" "postgres-1")
+
+            for service in "${services[@]}"; do
+              container="${{ env.PROJECT_NAME }}-${service}"
+              if docker ps | grep -q "$container"; then
+                pid=$(docker inspect -f '{{.State.Pid}}' "$container")
+                echo "Assigning $container (PID: $pid) to cgroup"
+                echo "$pid" | sudo tee "/sys/fs/cgroup/${{ env.PROJECT_NAME }}/cgroup.procs"
+              else
+                echo "Container $container not found!"
+                exit 1
+              fi
+            done
+            
+            echo "Current cgroup processes:"
+            cat /sys/fs/cgroup/${{ env.PROJECT_NAME }}/cgroup.procs
+            echo "Container stats:"
+            docker stats --no-stream
