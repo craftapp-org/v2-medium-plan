@@ -1,12 +1,11 @@
-name: Destroy Infrastructure
+name: Destroy Medium Infrastructure
+
 
 on:
-  workflow_dispatch:  # This allows manual triggering from GitHub UI
-    inputs:
-      confirm:
-        description: 'Type "destroy" to confirm destruction'
-        required: true
-        default: 'cancel'
+  push:
+    branches: [ "medium" ]
+    paths:
+    - '.github/workflows/destroy-medium-infrastructure.yml'
 
 env:
   AWS_DEFAULT_REGION: "us-east-1"
