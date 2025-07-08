@@ -1,0 +1,56 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:  # This allows manual triggering from GitHub UI
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm destruction'
+        required: true
+        default: 'cancel'
+
+env:
+  AWS_DEFAULT_REGION: "us-east-1"
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'destroy'  # Only proceed if correct confirmation
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init -input=false
+
+      - name: Get S3 Bucket from SSM
+        id: get-s3-bucket
+        run: |
+          S3_BUCKET=$(aws ssm get-parameter --name "/app/s3-bucket" --query "Parameter.Value" --output text)
+          echo "s3_bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+
+      - name: Empty S3 Bucket
+        run: |
+          aws s3 rm s3://${{ steps.get-s3-bucket.outputs.s3_bucket }} --recursive
+
+      - name: Terraform Destroy
+        run: |
+          terraform -chdir=terraform destroy \
+            -auto-approve \
+            -input=false
+        env:
+          TF_VAR_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          TF_VAR_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Clean up SSM Parameter
+        run: |
+          aws ssm delete-parameter --name "/app/s3-bucket"
